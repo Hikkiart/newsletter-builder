@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mail Builder Pro - Import/Export Ready</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        body { background-color: #1e1e1e; }
+        .tool-sidebar { width: 85px; background-color: #333333; border-right: 1px solid #111; }
+        .settings-sidebar { width: 340px; background-color: #2b2b2b; border-left: 1px solid #111; }
+        .canvas-area { background-color: #444; overflow-y: auto; }
+
+        /* Estrutura do Email - Sempre Centralizada */
+        #email-wrapper { 
+            width: 100%; 
+            min-height: 100%; 
+            padding: 40px 0; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: background-color 0.3s ease;
+        }
+        
+        #email-body { 
+            width: 600px;
+            min-height: 200px; 
+            transition: width 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            margin: 0 auto;
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.3);
+        }
+
+        /* Seção Principal */
+        .main-section {
+            position: relative;
+            width: 100%;
+            margin: 0 auto;
+            transition: background-color 0.2s;
+            display: grid; 
+            box-sizing: border-box;
+            gap: 0;
+        }
+        
+        /* Borda de seleção absoluta (sempre fica por cima de imagens e fundos) */
+        .main-section:hover::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px dashed rgba(99, 102, 241, 0.4); pointer-events: none; z-index: 15; }
+        .main-section.selected::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px solid #6366f1; pointer-events: none; z-index: 20; }
+
+        .section-controls {
+            display: none;
+            position: absolute;
+            left: -50px;
+            top: 0;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .main-section.selected .section-controls { display: flex; }
+
+        .control-btn {
+            background: #333;
+            color: #ccc;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #444;
+            cursor: pointer;
+        }
+        .control-btn:hover { background: #444; color: #fff; border-color: #6366f1; }
+
+        /* Colunas/Dropzones */
+        .content-dropzone {
+            min-height: 40px;
+            padding: 0;
+            display: block;
+            outline: 1px dashed transparent;
+            outline-offset: -1px;
+            box-sizing: border-box;
+        }
+
+        /* Blocos de Conteúdo */
+        .content-block {
+            position: relative;
+            cursor: pointer;
+            transition: all 0.1s;
+            box-sizing: border-box;
+            display: block;
+            margin: 0;
+            padding: 0;
+        }
+        
+        /* Borda de seleção de blocos (à prova de falhas para imagens) */
+        .content-block:hover::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px dashed #3b82f6; pointer-events: none; z-index: 40; }
+        .content-block.selected::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px solid #3b82f6; pointer-events: none; z-index: 50; }
+
+        /* Editor de Texto embutido */
+        .block-inner[contenteditable="true"]:focus {
+            outline: none;
+            box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.5);
+            border-radius: 2px;
+        }
+
+        .tab-btn { color: #71717a; transition: 0.2s; }
+        .tab-btn.tab-active { border-bottom: 2px solid #6366f1; color: #fff; }
+        
+        .layout-grid-option {
+            cursor: pointer;
+            border: 2px solid #444;
+            padding: 4px;
+            border-radius: 4px;
+            transition: 0.2s;
+        }
+        .layout-grid-option:hover, .layout-grid-option.active { border-color: #6366f1; background: #333; }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+
+        /* Previne interferência nativa do navegador ao arrastar sobre imagens/textos */
+        body.dragging-active .block-inner { pointer-events: none; }
+        body.dragging-active img { pointer-events: none; }
+        
+        .tool-item:hover .tooltip { opacity: 1; visibility: visible; }
+        .tooltip { 
+            opacity: 0; visibility: hidden; position: absolute; left: 100%; top: 50%; 
+            transform: translateY(-50%); margin-left: 10px; background: black; 
+            color: white; padding: 4px 8px; border-radius: 4px; font-size: 10px; 
+            white-space: nowrap; z-index: 100; pointer-events: none; transition: 0.2s;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden text-zinc-300" onload="initApp()">
+
+    <!-- Toast Notification Customizado -->
+    <div id="custom-toast" class="fixed bottom-6 right-6 bg-indigo-600 text-white px-6 py-3 rounded shadow-xl transform translate-y-24 opacity-0 transition-all duration-300 z-[100] text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span id="toast-msg">Mensagem</span>
+    </div>
+
+    <header class="h-12 bg-[#333] border-b border-[#111] flex items-center justify-between px-4 shrink-0 z-50 shadow-md">
+        <div class="flex items-center gap-3">
+            <div class="w-7 h-7 bg-indigo-600 rounded flex items-center justify-center font-bold text-white text-xs">MB</div>
+            <span class="text-xs font-bold tracking-widest text-zinc-400 uppercase italic">MailBuilder <span class="text-indigo-500 not-italic font-black">STOCKS</span></span>
+        </div>
+        <div class="flex gap-2 items-center">
+            <div class="text-[10px] text-zinc-500 font-bold uppercase mr-2">
+                Largura: <span id="current-width-label" class="text-indigo-400">600px</span>
+            </div>
+            
+            <!-- Input file oculto para importar -->
+            <input type="file" id="import-file" accept=".html" class="hidden" onchange="importHTMLModel(event)">
+            
+            <button onclick="document.getElementById('import-file').click()" class="bg-[#444] hover:bg-[#555] text-white text-[10px] px-3 py-2 rounded font-bold uppercase transition" title="Importar arquivo HTML gerado por este editor">Importar</button>
+            <button onclick="copyForEmail()" class="bg-[#444] hover:bg-[#555] text-white text-[10px] px-3 py-2 rounded font-bold uppercase transition" title="Copia o conteúdo para colar visualmente no Gmail/Outlook">Copiar Visual</button>
+            <button onclick="downloadHTMLFile()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] px-3 py-2 rounded font-bold uppercase transition shadow-lg">Baixar HTML</button>
+            <button onclick="downloadPDF()" class="bg-red-600 hover:bg-red-500 text-white text-[10px] px-3 py-2 rounded font-bold uppercase transition shadow-lg">Baixar PDF</button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- SIDEBAR FERRAMENTAS -->
+        <aside class="tool-sidebar flex flex-col py-4 border-r border-[#111] shrink-0 no-scrollbar overflow-y-auto bg-[#262626]">
+            <div class="mb-4 px-2 text-center">
+                <p class="text-[7px] text-zinc-600 font-black uppercase mb-2">Estrutura</p>
+                <div draggable="true" ondragstart="handleDragStart(event, 'section')" class="tool-item relative flex flex-col items-center justify-center p-3 text-zinc-400 hover:text-indigo-400 hover:bg-[#333] rounded-lg cursor-grab border border-transparent hover:border-indigo-500/30">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 12h16" stroke-width="2"/></svg>
+                    <span class="tooltip">Nova Secção</span>
+                </div>
+            </div>
+            <div class="h-[1px] bg-[#333] mb-4 mx-2"></div>
+            <div class="px-2 space-y-2 text-center">
+                <p class="text-[7px] text-zinc-600 font-black uppercase mb-2">Blocos</p>
+                <div draggable="true" ondragstart="handleDragStart(event, 'text')" class="tool-item relative flex flex-col items-center justify-center p-3 text-zinc-400 hover:text-white hover:bg-[#333] rounded-lg cursor-grab">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7" stroke-width="2"/></svg>
+                    <span class="tooltip">Texto</span>
+                </div>
+                <div draggable="true" ondragstart="handleDragStart(event, 'image')" class="tool-item relative flex flex-col items-center justify-center p-3 text-zinc-400 hover:text-white hover:bg-[#333] rounded-lg cursor-grab">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" stroke-width="2"/></svg>
+                    <span class="tooltip">Imagem</span>
+                </div>
+                <div draggable="true" ondragstart="handleDragStart(event, 'divider')" class="tool-item relative flex flex-col items-center justify-center p-3 text-zinc-400 hover:text-white hover:bg-[#333] rounded-lg cursor-grab">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14"/></svg>
+                    <span class="tooltip">Divisor</span>
+                </div>
+                <div draggable="true" ondragstart="handleDragStart(event, 'text-box')" class="tool-item relative flex flex-col items-center justify-center p-3 text-zinc-400 hover:text-white hover:bg-[#333] rounded-lg cursor-grab">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-width="2"/></svg>
+                    <span class="tooltip">Caixa de Texto</span>
+                </div>
+                <div draggable="true" ondragstart="handleDragStart(event, 'button')" class="tool-item relative flex flex-col items-center justify-center p-3 text-zinc-400 hover:text-white hover:bg-[#333] rounded-lg cursor-grab">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 15l-2 5L9 9l11 4-5 2z" stroke-width="2"/></svg>
+                    <span class="tooltip">Botão</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- CANVAS CENTRAL -->
+        <main class="flex-1 canvas-area no-scrollbar p-10 flex flex-col items-center" ondragover="handleCanvasDragOver(event)" ondragleave="handleCanvasDragLeave(event)" ondrop="handleCanvasDrop(event)">
+            <div id="email-wrapper" style="background-color: #ebebeb;">
+                <div id="email-body">
+                    <div id="canvas-placeholder" class="py-24 border-2 border-dashed border-zinc-500/20 rounded-xl text-center text-zinc-600 pointer-events-none mx-4">
+                        <p class="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Arraste uma secção aqui</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- PAINEL LATERAL DIREITO -->
+        <aside class="settings-sidebar flex flex-col shrink-0">
+            <!-- Tabs -->
+            <div class="flex bg-[#333] border-b border-[#111]">
+                <button onclick="setTab('config')" id="tab-config-btn" class="tab-btn flex-1 py-3 text-[10px] font-black uppercase tracking-widest tab-active">Configurações</button>
+                <button onclick="setTab('style')" id="tab-style-btn" class="tab-btn flex-1 py-3 text-[10px] font-black uppercase tracking-widest">Estilos</button>
+                <button onclick="setTab('layers')" id="tab-layers-btn" class="tab-btn flex-1 py-3 text-[10px] font-black uppercase tracking-widest">Camadas</button>
+            </div>
+
+            <div class="p-6 flex-1 overflow-y-auto no-scrollbar" id="settings-container">
+                <div id="editor-ui" class="space-y-8">
+                    <!-- Conteúdo dinâmico -->
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        const emailWrapper = document.getElementById('email-wrapper');
+        const emailBody = document.getElementById('email-body');
+        const canvasPlaceholder = document.getElementById('canvas-placeholder');
+        const editorUI = document.getElementById('editor-ui');
+        const widthLabel = document.getElementById('current-width-label');
+        
+        let selectedEl = null;
+        let selectedType = 'global'; 
+        let activeTab = 'config';
+        let draggedType = null; // Armazena o que está sendo arrastado no momento
+
+        function initApp() {
+            renderPanel();
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('custom-toast');
+            document.getElementById('toast-msg').innerText = msg;
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            setTimeout(() => { toast.classList.add('translate-y-24', 'opacity-0'); }, 4000);
+        }
+
+        function handleDragStart(e, type) { 
+            e.dataTransfer.setData('type', type); 
+            draggedType = type;
+            document.body.classList.add('dragging-active');
+        }
+
+        // Limpar estados de drag se o usuário cancelar soltando fora
+        document.addEventListener('dragend', () => {
+            draggedType = null;
+            document.body.classList.remove('dragging-active');
+            const secIndicator = document.getElementById('section-drop-indicator');
+            if (secIndicator) secIndicator.remove();
+            const blockIndicator = document.getElementById('block-drop-indicator');
+            if (blockIndicator) blockIndicator.remove();
+        });
+
+        // Calculadora para achar a posição de inserção correta (entre as seções)
+        function getInsertPosition(y, elements) {
+            return elements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+        function handleCanvasDragOver(e) {
+            e.preventDefault();
+            if (draggedType === 'section') {
+                const sections = [...emailBody.querySelectorAll('.main-section')];
+                
+                let indicator = document.getElementById('section-drop-indicator');
+                if (!indicator) {
+                    indicator = document.createElement('div');
+                    indicator.id = 'section-drop-indicator';
+                    indicator.style.cssText = 'height: 4px; background-color: #6366f1; width: 100%; border-radius: 2px; margin: 4px 0; z-index: 50; box-shadow: 0 0 8px rgba(99, 102, 241, 0.6); pointer-events: none;';
+                }
+
+                if (sections.length === 0) {
+                    emailBody.appendChild(indicator);
+                    return;
+                }
+
+                const afterElement = getInsertPosition(e.clientY, sections);
+                if (afterElement) {
+                    emailBody.insertBefore(indicator, afterElement);
+                } else {
+                    emailBody.appendChild(indicator);
+                }
+            }
+        }
+
+        function handleCanvasDragLeave(e) {
+            const indicator = document.getElementById('section-drop-indicator');
+            // Remove a linha se o mouse sair completamente da área do canvas
+            if (indicator && e.relatedTarget && !e.relatedTarget.closest('main')) {
+                indicator.remove();
+            }
+        }
+
+        function handleCanvasDrop(e) {
+            e.preventDefault();
+            const indicator = document.getElementById('section-drop-indicator');
+            // Guarda o elemento que estava logo abaixo da linha indicadora
+            const insertBeforeElement = indicator ? indicator.nextElementSibling : null;
+            if (indicator) indicator.remove();
+
+            const type = e.dataTransfer.getData('type');
+            if (type === 'section') {
+                createMainSection(insertBeforeElement);
+            }
+            draggedType = null;
+            document.body.classList.remove('dragging-active');
+        }
+
+        // --- SEÇÕES ---
+        function createMainSection(insertBeforeElement = null) {
+            if (canvasPlaceholder) canvasPlaceholder.style.display = 'none';
+
+            const section = document.createElement('div');
+            section.className = 'main-section';
+            section.style.backgroundColor = '#ffffff';
+            section.style.gridTemplateColumns = '1fr'; 
+            section.dataset.cols = '1';
+            
+            section.style.paddingTop = '0px';
+            section.style.paddingRight = '0px';
+            section.style.paddingBottom = '0px';
+            section.style.paddingLeft = '0px';
+            
+            // Cria a zona de conteúdo interna PRIMEIRO
+            const dropzone = document.createElement('div');
+            dropzone.className = 'content-dropzone';
+            section.appendChild(dropzone);
+
+            // Adiciona os botões de controle flutuantes
+            rebindSectionControls(section);
+            
+            // Ativa o arrastar e soltar na nova zona
+            setupDropzone(dropzone);
+            
+            section.onclick = (e) => { e.stopPropagation(); select(section, 'section'); };
+            
+            // Insere na posição visualmente escolhida ou no final
+            if (insertBeforeElement) {
+                emailBody.insertBefore(section, insertBeforeElement);
+            } else {
+                emailBody.appendChild(section);
+            }
+            
+            select(section, 'section');
+        }
+
+        // Adiciona os botões de controle a uma seção (usado na criação e importação)
+        function rebindSectionControls(section) {
+            const oldControls = section.querySelector('.section-controls');
+            if (oldControls) oldControls.remove();
+
+            const controls = document.createElement('div');
+            controls.className = 'section-controls';
+            controls.innerHTML = `
+                <button onclick="moveSection(this, -1)" class="control-btn"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 15l7-7 7 7" stroke-width="3"/></svg></button>
+                <button onclick="moveSection(this, 1)" class="control-btn"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-width="3"/></svg></button>
+                <button onclick="deleteElement(this, 'section')" class="control-btn hover:text-red-500 transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-width="2"/></svg></button>
+            `;
+            section.insertBefore(controls, section.firstChild);
+        }
+
+        // Calculadora para achar a posição entre os blocos
+        function getInsertPositionBlock(y, elements) {
+            return elements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+        function setupDropzone(zone) {
+            zone.ondragover = (e) => { 
+                if (draggedType === 'section') return; // Deixa o evento subir para o canvas principal tratar as seções
+                e.preventDefault(); 
+                e.stopPropagation();
+
+                const blocks = [...zone.querySelectorAll('.content-block')];
+                let indicator = document.getElementById('block-drop-indicator');
+                
+                if (!indicator) {
+                    indicator = document.createElement('div');
+                    indicator.id = 'block-drop-indicator';
+                    indicator.style.cssText = 'height: 4px; background-color: #ec4899; width: 100%; border-radius: 2px; margin: 4px 0; z-index: 50; box-shadow: 0 0 8px rgba(236, 72, 153, 0.6); pointer-events: none;';
+                }
+
+                if (blocks.length === 0) {
+                    zone.appendChild(indicator);
+                } else {
+                    const afterElement = getInsertPositionBlock(e.clientY, blocks);
+                    if (afterElement) {
+                        zone.insertBefore(indicator, afterElement);
+                    } else {
+                        zone.appendChild(indicator);
+                    }
+                }
+            };
+            zone.ondragleave = (e) => { 
+                if (draggedType === 'section') return;
+                const indicator = document.getElementById('block-drop-indicator');
+                if (indicator && e.relatedTarget && !zone.contains(e.relatedTarget)) {
+                    indicator.remove();
+                }
+            };
+            zone.ondrop = (e) => {
+                if (draggedType === 'section') return;
+                e.preventDefault(); 
+                e.stopPropagation();
+                
+                const indicator = document.getElementById('block-drop-indicator');
+                const insertBeforeElement = indicator ? indicator.nextElementSibling : null;
+                if (indicator) indicator.remove();
+
+                const type = e.dataTransfer.getData('type');
+                if (type && type !== 'section') {
+                    addContentBlock(zone, type, insertBeforeElement);
+                }
+                draggedType = null;
+                document.body.classList.remove('dragging-active');
+            };
+        }
+
+        function addContentBlock(zone, type, insertBeforeElement = null) {
+            const block = document.createElement('div');
+            block.className = 'content-block';
+            block.dataset.type = type;
+
+            block.style.paddingTop = '10px';
+            block.style.paddingRight = '10px';
+            block.style.paddingBottom = '10px';
+            block.style.paddingLeft = '10px';
+
+            // ATENÇÃO: estilos embutidos puros para funcionar perfeitamente quando copiado pro Gmail
+            if (type === 'text') {
+                block.style.fontFamily = 'Arial, sans-serif';
+                block.style.fontSize = '16px';
+                block.style.color = '#333333';
+                block.style.lineHeight = '1.5';
+                block.style.backgroundColor = 'transparent';
+                block.innerHTML = `<div class="block-inner" contenteditable="true" style="min-height: 20px;"><p style="margin: 0;">Insira seu texto aqui. Selecione o texto e use o painel para formatá-lo.</p></div>`;
+            } else if (type === 'text-box') {
+                block.style.fontFamily = 'Arial, sans-serif';
+                block.style.fontSize = '16px';
+                block.style.color = '#3730a3';
+                block.style.lineHeight = '1.5';
+                block.style.backgroundColor = '#e0e7ff';
+                block.style.borderRadius = '8px';
+                block.innerHTML = `<div class="block-inner" contenteditable="true" style="min-height: 20px;"><p style="margin: 0;">Esta é uma caixa de texto destacada. Edite o texto e mude a cor de fundo nas configurações.</p></div>`;
+            } else if (type === 'image') {
+                block.innerHTML = `
+                    <div class="block-inner" style="text-align: center; line-height: 0; font-size: 0;">
+                        <a href="" class="image-link" style="display: block; text-decoration: none; text-align: inherit; line-height: 0; font-size: 0;" draggable="false">
+                            <img src="https://via.placeholder.com/600x200?text=Sua+Imagem" class="block-img" alt="" draggable="false" style="display: inline-block; max-width: 100%; height: auto; border-radius: 0px; width: 100%; border: none; vertical-align: middle; margin: 0; padding: 0;">
+                        </a>
+                    </div>`;
+            } else if (type === 'divider') {
+                block.innerHTML = `
+                    <div class="block-inner" style="padding: 10px 0; text-align: center; line-height: 0;">
+                        <hr class="divider-el" style="border: 0; border-top: 2px solid #e5e7eb; margin: 0 auto; width: 100%;">
+                    </div>`;
+            } else if (type === 'button') {
+                block.innerHTML = `<div class="block-inner" style="text-align: center;"><a href="#" style="display: inline-block; padding: 12px 40px; background-color: #4f46e5; color: #ffffff; font-weight: bold; border-radius: 8px; font-size: 14px; text-decoration: none; text-transform: uppercase;">Botão</a></div>`;
+            }
+
+            block.onclick = (e) => { e.stopPropagation(); e.preventDefault(); select(block, 'block'); };
+            
+            // Inserir no local escolhido visualmente
+            if (insertBeforeElement) {
+                zone.insertBefore(block, insertBeforeElement);
+            } else {
+                zone.appendChild(block);
+            }
+            
+            select(block, 'block');
+        }
+
+        // --- SELEÇÃO E PAINEL ---
+        function select(el, type) {
+            document.querySelectorAll('.main-section, .content-block').forEach(i => i.classList.remove('selected'));
+            if (el) {
+                selectedEl = el; selectedType = type;
+                el.classList.add('selected');
+                
+                // Abre automaticamente a sanfona das camadas se estiver fechada
+                const parentSec = el.closest('.main-section');
+                if (parentSec) parentSec.dataset.layerExpanded = 'true';
+                const parentZone = el.closest('.content-dropzone');
+                if (parentZone) parentZone.dataset.layerExpanded = 'true';
+            } else {
+                selectedEl = null; selectedType = 'global';
+            }
+            renderPanel();
+        }
+
+        function setTab(tab) {
+            activeTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('tab-active'));
+            document.getElementById(`tab-${tab}-btn`).classList.add('tab-active');
+            renderPanel();
+        }
+
+        function renderPanel() {
+            editorUI.innerHTML = "";
+            if (activeTab === 'layers') { renderLayersTab(); return; }
+            if (selectedType === 'global') { renderGlobalSettings(); return; }
+            if (activeTab === 'config') renderConfigTab();
+            else renderStyleTab();
+        }
+
+        function renderLayersTab() {
+            const wrap = document.createElement('div');
+            wrap.className = "space-y-1 pb-10";
+
+            const createItem = (label, icon, isSelected, onClick, padLeft, hasChildren, isExpanded, onToggle) => {
+                const div = document.createElement('div');
+                const bg = isSelected ? 'bg-indigo-600/30 border-indigo-500 text-white' : 'border-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200';
+                div.className = `flex items-center py-1.5 pr-2 border rounded transition-colors text-[10px] font-bold uppercase tracking-wide ${bg}`;
+                div.style.paddingLeft = padLeft + 'px';
+
+                let toggleHtml = '';
+                if (hasChildren) {
+                    const chevron = isExpanded 
+                        ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />' 
+                        : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />';
+                    toggleHtml = `<div class="p-1 hover:bg-zinc-700 rounded mr-1 cursor-pointer text-zinc-500 hover:text-white transition-colors toggle-btn"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">${chevron}</svg></div>`;
+                } else {
+                    toggleHtml = `<div class="w-5 mr-1 shrink-0"></div>`;
+                }
+
+                div.innerHTML = `
+                    ${toggleHtml}
+                    <div class="flex items-center gap-2 cursor-pointer flex-1 overflow-hidden click-area">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${icon}"/></svg>
+                        <span class="truncate">${label}</span>
+                    </div>
+                `;
+
+                if (hasChildren && onToggle) {
+                    div.querySelector('.toggle-btn').onclick = (e) => {
+                        e.stopPropagation();
+                        onToggle();
+                    };
+                }
+                
+                div.querySelector('.click-area').onclick = (e) => {
+                    e.stopPropagation();
+                    if (onClick) onClick();
+                };
+
+                return div;
+            };
+
+            // Global Background Layer
+            wrap.appendChild(createItem("Fundo do E-mail", "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z", selectedType === 'global', () => {
+                select(null);
+            }, 8, false));
+
+            // Percorre as Seções
+            const sections = emailBody.querySelectorAll('.main-section');
+            sections.forEach((sec, sIdx) => {
+                if (sec.dataset.layerExpanded === undefined) sec.dataset.layerExpanded = 'true';
+                const isExpanded = sec.dataset.layerExpanded === 'true';
+
+                wrap.appendChild(createItem(`Secção ${sIdx + 1}`, "M4 5h16v14H4zM4 12h16", selectedEl === sec, () => {
+                    select(sec, 'section');
+                }, 8, true, isExpanded, () => {
+                    sec.dataset.layerExpanded = isExpanded ? 'false' : 'true';
+                    renderPanel();
+                }));
+
+                if (isExpanded) {
+                    const zones = sec.querySelectorAll('.content-dropzone');
+                    zones.forEach((zone, zIdx) => {
+                        let padBase = 24;
+                        if (sec.dataset.cols > 1) {
+                            if (zone.dataset.layerExpanded === undefined) zone.dataset.layerExpanded = 'true';
+                            const zExpanded = zone.dataset.layerExpanded === 'true';
+                            
+                            wrap.appendChild(createItem(`Coluna ${zIdx + 1}`, "M9 3v18M15 3v18", false, null, 24, true, zExpanded, () => {
+                                zone.dataset.layerExpanded = zExpanded ? 'false' : 'true';
+                                renderPanel();
+                            }));
+                            
+                            if (!zExpanded) return;
+                            padBase = 40;
+                        }
+                        
+                        const blocks = zone.querySelectorAll('.content-block');
+                        blocks.forEach((block) => {
+                            let icon = "M4 6h16M4 12h16M4 18h7"; // default: text
+                            const t = block.dataset.type;
+                            if (t === 'image') icon = "M4 16l4.586-4.586a2 2 0 012.828 0L16 16";
+                            if (t === 'divider') icon = "M5 12h14";
+                            if (t === 'text-box') icon = "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z";
+                            if (t === 'button') icon = "M15 15l-2 5L9 9l11 4-5 2z";
+                            
+                            let label = t.charAt(0).toUpperCase() + t.slice(1).replace('-', ' ');
+                            if (t === 'text-box') label = 'Caixa de Texto';
+                            if (t === 'text') label = 'Texto Simples';
+                            if (t === 'image') label = 'Imagem';
+                            
+                            wrap.appendChild(createItem(label, icon, selectedEl === block, () => {
+                                select(block, 'block');
+                            }, padBase, false));
+                        });
+                    });
+                }
+            });
+
+            if(sections.length === 0) {
+                wrap.innerHTML += `<div class="p-4 text-center mt-4 border border-dashed border-zinc-700 rounded"><p class="text-[10px] text-zinc-500 font-bold uppercase">Nenhum elemento adicionado</p></div>`;
+            }
+
+            editorUI.appendChild(wrap);
+        }
+
+        function renderGlobalSettings() {
+            editorUI.innerHTML = `<div class="mb-4"><span class="px-2 py-1 bg-zinc-800 text-zinc-400 text-[8px] font-black uppercase rounded">Configurações do Projeto</span></div>`;
+            createColorPicker("Cor de Fundo (Área Externa)", emailWrapper.style.backgroundColor || "#ebebeb", (v) => emailWrapper.style.backgroundColor = v);
+            
+            const widthWrap = createFieldGroup("Largura do E-mail");
+            const wInput = document.createElement('input');
+            wInput.type = 'range'; wInput.min = 400; wInput.max = 800; wInput.value = parseInt(emailBody.style.width) || 600;
+            wInput.className = "w-full accent-indigo-500 h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer";
+            wInput.oninput = (e) => {
+                emailBody.style.width = e.target.value + 'px';
+                widthLabel.innerText = e.target.value + 'px';
+            };
+            widthWrap.appendChild(wInput);
+            editorUI.appendChild(widthWrap);
+        }
+
+        function renderConfigTab() {
+            if (selectedType === 'section') {
+                const layoutWrap = createFieldGroup("Blocos por Contêiner (Colunas)");
+                const grid = document.createElement('div');
+                grid.className = "grid grid-cols-4 gap-2 mt-2";
+                [1, 2, 3, 4].forEach(n => {
+                    const opt = document.createElement('div');
+                    opt.className = `layout-grid-option ${selectedEl.dataset.cols == n ? 'active' : ''}`;
+                    opt.innerHTML = `<div class="grid grid-cols-${n} gap-1 h-8">${Array(n).fill('<div class="bg-zinc-600 rounded-sm"></div>').join('')}</div>`;
+                    opt.onclick = () => updateSectionColumns(n);
+                    grid.appendChild(opt);
+                });
+                layoutWrap.appendChild(grid);
+                editorUI.appendChild(layoutWrap);
+
+                const widthWrap = createFieldGroup("Largura da Seção (px)");
+                const wDiv = document.createElement('div');
+                wDiv.className = "flex items-center gap-3 mt-2 mb-4";
+                let currW = selectedEl.style.width;
+                if (!currW || currW === '100%') currW = emailBody.style.width || '600px';
+                const wRange = document.createElement('input');
+                wRange.type = 'range'; wRange.min = 200; wRange.max = 1000; wRange.value = parseInt(currW);
+                wRange.className = "w-full accent-indigo-500 h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer flex-1";
+                const wNum = document.createElement('input');
+                wNum.type = 'number'; wNum.value = parseInt(currW);
+                wNum.className = "w-16 bg-[#1e1e1e] border border-zinc-800 rounded px-2 py-1 text-xs text-indigo-400 font-bold outline-none text-center focus:border-indigo-500 transition-colors";
+                const updateWidth = (val) => {
+                    selectedEl.style.width = val + 'px';
+                    wRange.value = val; wNum.value = val;
+                };
+                wRange.oninput = (e) => updateWidth(e.target.value);
+                wNum.oninput = (e) => updateWidth(e.target.value);
+                wDiv.appendChild(wRange); wDiv.appendChild(wNum); widthWrap.appendChild(wDiv);
+                editorUI.appendChild(widthWrap);
+
+            } else if (selectedType === 'block') {
+                const bType = selectedEl.dataset.type;
+                
+                if (bType === 'text' || bType === 'text-box') {
+                    const pGroup = createFieldGroup("Estilo do Parágrafo");
+                    const pBtns = document.createElement('div');
+                    pBtns.className = "flex gap-1 mt-2 bg-[#1e1e1e] p-1 rounded border border-zinc-800";
+                    ['P', 'H1', 'H2', 'H3', 'H4'].forEach(tag => {
+                        const btn = document.createElement('button');
+                        btn.className = "flex-1 py-1.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition";
+                        btn.innerText = tag;
+                        btn.onclick = () => document.execCommand('formatBlock', false, tag);
+                        pBtns.appendChild(btn);
+                    });
+                    pGroup.appendChild(pBtns);
+                    editorUI.appendChild(pGroup);
+
+                    const formatGroup = createFieldGroup("Estilo de Texto");
+                    const fBts = document.createElement('div');
+                    fBts.className = "flex gap-1 mt-2 bg-[#1e1e1e] p-1 rounded border border-zinc-800";
+                    const formats = [
+                        { label: 'B', cmd: 'bold', style: 'font-weight: bold;' },
+                        { label: 'I', cmd: 'italic', style: 'font-style: italic; font-family: serif;' },
+                        { label: 'U', cmd: 'underline', style: 'text-decoration: underline;' },
+                        { label: 'S', cmd: 'strikeThrough', style: 'text-decoration: line-through;' }
+                    ];
+                    formats.forEach(f => {
+                        const btn = document.createElement('button');
+                        btn.className = "flex-1 py-1.5 text-sm text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition";
+                        btn.innerHTML = `<span style="${f.style}">${f.label}</span>`;
+                        btn.onclick = () => document.execCommand(f.cmd, false, null);
+                        fBts.appendChild(btn);
+                    });
+                    formatGroup.appendChild(fBts);
+                    editorUI.appendChild(formatGroup);
+
+                    const alignGroup = createFieldGroup("Alinhamento no Desktop");
+                    const aBtns = document.createElement('div');
+                    aBtns.className = "flex gap-1 mt-2 bg-[#1e1e1e] p-1 rounded border border-zinc-800";
+                    const aligns = [
+                        { icon: 'M4 6h16M4 12h10M4 18h16', val: 'left' },
+                        { icon: 'M4 6h16M7 12h10M4 18h16', val: 'center' },
+                        { icon: 'M4 6h16M10 12h10M4 18h16', val: 'right' },
+                        { icon: 'M4 6h16M4 12h16M4 18h16', val: 'justify' }
+                    ];
+                    aligns.forEach(a => {
+                        const innerEl = selectedEl.querySelector('.block-inner');
+                        const isActive = innerEl && innerEl.style.textAlign === a.val;
+                        const btn = document.createElement('button');
+                        btn.className = `flex-1 py-1.5 flex justify-center text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition ${isActive ? 'bg-zinc-700 text-white' : ''}`;
+                        btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${a.icon}"/></svg>`;
+                        btn.onclick = () => {
+                            if(innerEl) innerEl.style.textAlign = a.val;
+                            renderPanel(); 
+                        };
+                        aBtns.appendChild(btn);
+                    });
+                    alignGroup.appendChild(aBtns);
+                    editorUI.appendChild(alignGroup);
+
+                } else if (bType === 'image') {
+                    const imgEl = selectedEl.querySelector('img');
+                    const linkEl = selectedEl.querySelector('a');
+
+                    const srcGroup = createFieldGroup("Fonte da Imagem (URL ou Drive)");
+                    const srcInput = document.createElement('input');
+                    srcInput.type = 'text';
+                    srcInput.className = "w-full bg-[#1e1e1e] border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 mt-2 outline-none focus:border-indigo-500 transition-colors";
+                    srcInput.value = imgEl.getAttribute('src');
+                    srcInput.placeholder = "Cole a URL ou o link do Google Drive";
+                    srcInput.oninput = (e) => {
+                        let url = e.target.value;
+                        const driveMatch = url.match(/(?:file\/d\/|open\?id=|id=)([a-zA-Z0-9_-]+)/);
+                        if (driveMatch && driveMatch[1]) url = `https://lh3.googleusercontent.com/d/${driveMatch[1]}`;
+                        imgEl.setAttribute('src', url);
+                    };
+                    srcGroup.appendChild(srcInput);
+                    editorUI.appendChild(srcGroup);
+
+                    const linkGroup = createFieldGroup("Ação (Link de Destino)");
+                    const linkInput = document.createElement('input');
+                    linkInput.type = 'text';
+                    linkInput.className = "w-full bg-[#1e1e1e] border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 mt-2 outline-none focus:border-indigo-500 transition-colors";
+                    linkInput.value = linkEl ? linkEl.getAttribute('href') : '';
+                    linkInput.placeholder = "https://...";
+                    linkInput.oninput = (e) => { if(linkEl) linkEl.setAttribute('href', e.target.value); };
+                    linkGroup.appendChild(linkInput);
+                    editorUI.appendChild(linkGroup);
+
+                    const wVal = imgEl.style.width ? parseInt(imgEl.style.width) : 100;
+                    createRange("Tamanho no Desktop (%)", wVal, (v) => imgEl.style.width = v + '%', 10, 100);
+                } else if (bType === 'divider') {
+                    const hrEl = selectedEl.querySelector('.divider-el');
+                    const wVal = hrEl.style.width ? parseInt(hrEl.style.width) : 100;
+                    createRange("Largura da Linha (%)", wVal, (v) => hrEl.style.width = v + '%', 10, 100);
+                } else if (bType === 'button') {
+                    const linkEl = selectedEl.querySelector('a');
+                    const linkGroup = createFieldGroup("Ação do Botão (URL)");
+                    const linkInput = document.createElement('input');
+                    linkInput.type = 'text';
+                    linkInput.className = "w-full bg-[#1e1e1e] border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 mt-2 outline-none focus:border-indigo-500 transition-colors";
+                    linkInput.value = linkEl ? linkEl.getAttribute('href') : '';
+                    linkInput.placeholder = "https://...";
+                    linkInput.oninput = (e) => { if(linkEl) linkEl.setAttribute('href', e.target.value); };
+                    linkGroup.appendChild(linkInput);
+                    editorUI.appendChild(linkGroup);
+                }
+            }
+            
+            renderSpacingControl("Preenchimento no Desktop", "padding");
+            renderSpacingControl("Margens no Desktop", "margin");
+            
+            if (selectedType === 'block') {
+                const delBtn = document.createElement('button');
+                delBtn.className = "w-full py-3 mt-4 text-[10px] font-black uppercase bg-red-900/20 text-red-500 rounded border border-red-900/30 hover:bg-red-900/40 transition";
+                delBtn.innerText = "Eliminar Bloco";
+                delBtn.onclick = () => deleteElement(selectedEl, 'block');
+                editorUI.appendChild(delBtn);
+            }
+        }
+
+        function renderStyleTab() {
+            if (selectedType === 'section') {
+                createColorPicker("Cor de Fundo da Secção", selectedEl.style.backgroundColor || "#ffffff", (v) => selectedEl.style.backgroundColor = v);
+                createRange("Arredondamento", parseInt(selectedEl.style.borderRadius) || 0, (v) => selectedEl.style.borderRadius = v + 'px', 0, 100);
+            } else if (selectedType === 'block') {
+                const bType = selectedEl.dataset.type;
+                
+                if (bType === 'text' || bType === 'text-box') {
+                    const ffGroup = createFieldGroup("Família de Fontes");
+                    const ffSelect = document.createElement('select');
+                    ffSelect.className = "w-full bg-[#1e1e1e] border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 mt-2 outline-none focus:border-indigo-500 cursor-pointer";
+                    ['Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana'].forEach(f => {
+                        const opt = document.createElement('option');
+                        opt.value = f; opt.innerText = f;
+                        if (selectedEl.style.fontFamily.includes(f)) opt.selected = true;
+                        ffSelect.appendChild(opt);
+                    });
+                    ffSelect.onchange = (e) => {
+                        selectedEl.style.fontFamily = e.target.value;
+                        const inner = selectedEl.querySelector('.block-inner');
+                        if (inner) inner.style.fontFamily = e.target.value;
+                    };
+                    ffGroup.appendChild(ffSelect);
+                    editorUI.appendChild(ffGroup);
+
+                    const fsGroup = createFieldGroup("Tamanho da Fonte");
+                    const fsSelect = document.createElement('select');
+                    fsSelect.className = "w-full bg-[#1e1e1e] border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 mt-2 outline-none focus:border-indigo-500 cursor-pointer";
+                    [10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48].forEach(size => {
+                        const opt = document.createElement('option');
+                        opt.value = size; opt.innerText = size + 'px';
+                        if (parseInt(selectedEl.style.fontSize) === size) opt.selected = true;
+                        fsSelect.appendChild(opt);
+                    });
+                    fsSelect.onchange = (e) => {
+                        const newSize = e.target.value + 'px';
+                        selectedEl.style.fontSize = newSize;
+                        const inner = selectedEl.querySelector('.block-inner');
+                        if (inner) inner.style.fontSize = newSize;
+                    };
+                    fsGroup.appendChild(fsSelect);
+                    editorUI.appendChild(fsGroup);
+
+                    createColorPicker("Cor da Fonte", selectedEl.style.color || "#333333", (v) => {
+                        selectedEl.style.color = v;
+                        const inner = selectedEl.querySelector('.block-inner');
+                        if (inner) inner.style.color = v;
+                    });
+
+                    const lhGroup = createFieldGroup("Altura da Linha");
+                    const lhInput = document.createElement('input');
+                    lhInput.type = 'number'; lhInput.step = '0.1';
+                    lhInput.className = "w-full bg-[#1e1e1e] border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 mt-2 outline-none focus:border-indigo-500";
+                    lhInput.value = parseFloat(selectedEl.style.lineHeight) || 1.5;
+                    lhInput.oninput = (e) => selectedEl.style.lineHeight = e.target.value;
+                    lhGroup.appendChild(lhInput);
+                    editorUI.appendChild(lhGroup);
+
+                    createColorPicker("Cor de Fundo do Bloco", selectedEl.style.backgroundColor || "transparent", (v) => selectedEl.style.backgroundColor = v);
+
+                    if (bType === 'text-box') {
+                        createRange("Arredondamento das Bordas", parseInt(selectedEl.style.borderRadius) || 0, (v) => selectedEl.style.borderRadius = v + 'px', 0, 100);
+                    }
+
+                } else if (bType === 'image') {
+                    const imgEl = selectedEl.querySelector('img');
+                    const innerEl = selectedEl.querySelector('.block-inner');
+                    createColorPicker("Cor de Fundo", innerEl.style.backgroundColor || "transparent", (v) => innerEl.style.backgroundColor = v);
+                    createRange("Raio no Desktop (Bordas)", parseInt(imgEl.style.borderRadius) || 0, (v) => imgEl.style.borderRadius = v + 'px', 0, 50);
+                } else if (bType === 'divider') {
+                    const hrEl = selectedEl.querySelector('.divider-el');
+                    createColorPicker("Cor da Linha", hrEl.style.borderTopColor || "#e5e7eb", (v) => hrEl.style.borderTopColor = v);
+                    createRange("Espessura (px)", parseInt(hrEl.style.borderTopWidth) || 2, (v) => hrEl.style.borderTopWidth = v + 'px', 1, 20);
+                } else if (bType === 'button') {
+                    const btn = selectedEl.querySelector('a');
+                    createColorPicker("Cor do Fundo do Botão", btn.style.backgroundColor || "#4f46e5", (v) => btn.style.backgroundColor = v);
+                    createColorPicker("Cor do Texto", btn.style.color || "#ffffff", (v) => btn.style.color = v);
+                    createRange("Arredondamento", parseInt(btn.style.borderRadius) || 0, (v) => btn.style.borderRadius = v + 'px', 0, 50);
+                }
+            }
+        }
+
+        // --- HELPERS UI ---
+        function createFieldGroup(title) {
+            const div = document.createElement('div'); div.className = "space-y-3";
+            div.innerHTML = `<label class="text-[10px] font-black uppercase text-zinc-500 tracking-widest">${title}</label>`;
+            return div;
+        }
+
+        function renderSpacingControl(title, property) {
+            const wrap = createFieldGroup(title);
+            const grid = document.createElement('div'); grid.className = "grid grid-cols-2 gap-4 mt-2";
+            ["Top", "Right", "Bottom", "Left"].forEach(dir => {
+                const item = document.createElement('div');
+                item.className = "flex items-center bg-[#1e1e1e] border border-zinc-800 rounded px-3 py-2 focus-within:border-indigo-500 transition-colors";
+                item.innerHTML = `<span class="text-[9px] font-black text-zinc-600 mr-3 w-4 uppercase">${dir[0]}</span>`;
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.className = "bg-transparent w-full text-xs outline-none text-indigo-400 font-bold";
+                
+                const currentVal = selectedEl.style[property + dir] || getComputedStyle(selectedEl)[property + dir];
+                input.value = parseInt(currentVal) || 0;
+                
+                input.oninput = (e) => selectedEl.style[property + dir] = e.target.value + 'px';
+                item.appendChild(input); grid.appendChild(item);
+            });
+            wrap.appendChild(grid); editorUI.appendChild(wrap);
+        }
+
+        function createColorPicker(label, val, cb) {
+            const group = createFieldGroup(label);
+            const wrap = document.createElement('div'); wrap.className = "flex items-center gap-3 bg-[#1e1e1e] mt-2 p-1 rounded border border-zinc-800";
+            const input = document.createElement('input'); input.type = 'color';
+            input.className = "w-10 h-10 bg-transparent border-none cursor-pointer rounded overflow-hidden";
+            input.value = rgbToHex(val);
+            input.oninput = (e) => {
+                cb(e.target.value);
+                code.innerText = e.target.value;
+            };
+            const code = document.createElement('span'); code.className = "text-[10px] font-mono text-zinc-500 uppercase";
+            code.innerText = input.value;
+            wrap.appendChild(input); wrap.appendChild(code); group.appendChild(wrap); editorUI.appendChild(group);
+        }
+
+        function createRange(label, val, cb, min, max) {
+            const group = createFieldGroup(label);
+            const input = document.createElement('input'); input.type = 'range'; input.min = min; input.max = max; input.value = val;
+            input.className = "w-full accent-indigo-500 h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer mt-2";
+            input.oninput = (e) => cb(e.target.value);
+            group.appendChild(input); editorUI.appendChild(group);
+        }
+
+        // --- UTILS ---
+        function moveSection(btn, dir) {
+            const s = btn.closest('.main-section');
+            if (dir === -1 && s.previousElementSibling && s.previousElementSibling.id !== 'canvas-placeholder') 
+                emailBody.insertBefore(s, s.previousElementSibling);
+            else if (dir === 1 && s.nextElementSibling) 
+                emailBody.insertBefore(s.nextElementSibling, s);
+        }
+
+        function deleteElement(target, type) {
+            const el = target.closest(type === 'section' ? '.main-section' : '.content-block');
+            if (el) el.remove();
+            select(null);
+            if (emailBody.children.length === 1 && emailBody.children[0].id === 'canvas-placeholder') 
+                canvasPlaceholder.style.display = 'block';
+        }
+
+        function updateSectionColumns(n) {
+            selectedEl.dataset.cols = n;
+            selectedEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+            const zones = selectedEl.querySelectorAll('.content-dropzone');
+            if (n > zones.length) {
+                for (let i = 0; i < (n - zones.length); i++) {
+                    const newZone = document.createElement('div');
+                    newZone.className = 'content-dropzone';
+                    setupDropzone(newZone);
+                    selectedEl.appendChild(newZone);
+                }
+            } else if (n < zones.length) {
+                const last = zones[n-1];
+                for (let i = n; i < zones.length; i++) {
+                    while (zones[i].firstChild) last.appendChild(zones[i].firstChild);
+                    zones[i].remove();
+                }
+            }
+            renderPanel();
+        }
+
+        function rgbToHex(rgb) {
+            if (!rgb || rgb.startsWith('#')) return rgb;
+            if (rgb === 'transparent' || rgb === 'rgba(0, 0, 0, 0)') return '#ffffff';
+            const p = rgb.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (!p) return '#ffffff';
+            return "#" + ("0" + parseInt(p[1],10).toString(16)).slice(-2) + ("0" + parseInt(p[2],10).toString(16)).slice(-2) + ("0" + parseInt(p[3],10).toString(16)).slice(-2);
+        }
+
+        document.querySelector('.canvas-area').onclick = (e) => {
+            if (e.target.id === 'email-wrapper' || e.target.classList.contains('canvas-area')) select(null);
+        };
+
+        // --- SISTEMAS DE EXPORTAÇÃO E IMPORTAÇÃO ---
+
+        function generateCleanHTML() {
+            const tempBody = emailBody.cloneNode(true);
+            
+            // Limpa controles visuais e placeholder
+            tempBody.querySelectorAll('.section-controls, #canvas-placeholder').forEach(el => el.remove());
+            
+            // Remove o estado de selecionado visualmente
+            tempBody.querySelectorAll('.main-section, .content-block').forEach(el => {
+                el.classList.remove('selected');
+            });
+            tempBody.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+
+            // Remove links vazios em imagens para não dar problema de clique sem destino no envio do email
+            tempBody.querySelectorAll('.image-link').forEach(link => {
+                if(!link.getAttribute('href') || link.getAttribute('href') === '') {
+                    const img = link.querySelector('img');
+                    link.parentNode.insertBefore(img, link);
+                    link.remove();
+                }
+            });
+
+            // --- CONVERSÃO CRÍTICA PARA E-MAIL (FIX PARA OUTLOOK/GMAIL) ---
+            // Converte o CSS Grid (que quebra nos emails) em Tabelas (que funcionam sempre)
+            tempBody.querySelectorAll('.main-section').forEach(section => {
+                const colsCount = parseInt(section.dataset.cols) || 1;
+                const zones = Array.from(section.querySelectorAll('.content-dropzone'));
+
+                const table = document.createElement('table');
+                table.setAttribute('width', '100%');
+                table.setAttribute('border', '0');
+                table.setAttribute('cellpadding', '0');
+                table.setAttribute('cellspacing', '0');
+                table.setAttribute('role', 'presentation');
+                table.style.width = '100%';
+                table.style.tableLayout = 'fixed'; // Impede as colunas de ficarem finas
+                table.style.borderCollapse = 'collapse';
+
+                const tbody = document.createElement('tbody');
+                const tr = document.createElement('tr');
+
+                zones.forEach(zone => {
+                    const td = document.createElement('td');
+                    const pct = (100 / colsCount).toFixed(2) + '%'; // Percentagem exacta
+                    td.setAttribute('width', pct);
+                    td.setAttribute('valign', 'top');
+                    td.style.width = pct;
+                    td.style.padding = '0';
+                    td.style.verticalAlign = 'top';
+
+                    td.appendChild(zone);
+                    tr.appendChild(td);
+                });
+
+                tbody.appendChild(tr);
+                table.appendChild(tbody);
+                section.appendChild(table);
+
+                // Troca o grid por bloco no HTML final exportado
+                section.style.display = 'block';
+                section.style.gridTemplateColumns = '';
+            });
+
+            return tempBody;
+        }
+
+        // COPIAR VISUAL (Rich Text para Gmail/Outlook)
+        function copyForEmail() {
+            select(null);
+            const tempBody = generateCleanHTML();
+            
+            const bgColor = emailWrapper.style.backgroundColor || '#ebebeb';
+            const bodyWidth = parseInt(emailBody.style.width) || 600;
+            
+            // Estrutura de tabela externa para forçar o fundo cinza
+            const tableWrapper = document.createElement('table');
+            tableWrapper.width = '100%';
+            tableWrapper.border = '0';
+            tableWrapper.cellSpacing = '0';
+            tableWrapper.cellPadding = '0';
+            tableWrapper.setAttribute('role', 'presentation');
+            tableWrapper.style.backgroundColor = bgColor;
+            
+            const tbody = document.createElement('tbody');
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.align = 'center';
+            td.style.padding = '40px 0'; // Espaçamento superior e inferior
+            
+            // Tabela Interna restritiva para segurar a largura perfeitamente (Fix Outlook)
+            const innerTable = document.createElement('table');
+            innerTable.width = bodyWidth.toString();
+            innerTable.border = '0';
+            innerTable.cellSpacing = '0';
+            innerTable.cellPadding = '0';
+            innerTable.setAttribute('role', 'presentation');
+            innerTable.style.width = bodyWidth + 'px';
+            innerTable.style.maxWidth = '100%';
+            innerTable.style.backgroundColor = emailBody.style.backgroundColor || '#ffffff';
+            innerTable.style.margin = '0 auto';
+            innerTable.style.tableLayout = 'fixed';
+
+            const innerTbody = document.createElement('tbody');
+            const innerTr = document.createElement('tr');
+            const innerTd = document.createElement('td');
+            innerTd.align = 'left';
+
+            // Adiciona as seções convertidas dentro da tabela interna
+            while(tempBody.firstChild) {
+                innerTd.appendChild(tempBody.firstChild);
+            }
+
+            innerTr.appendChild(innerTd);
+            innerTbody.appendChild(innerTr);
+            innerTable.appendChild(innerTbody);
+            td.appendChild(innerTable);
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+            tableWrapper.appendChild(tbody);
+
+            const tempDiv = document.createElement('div');
+            tempDiv.appendChild(tableWrapper);
+            tempDiv.style.position = 'fixed';
+            tempDiv.style.left = '-9999px';
+            document.body.appendChild(tempDiv);
+            
+            const range = document.createRange();
+            range.selectNodeContents(tempDiv);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            
+            try {
+                document.execCommand('copy');
+                showToast("Visual Copiado! Abra o seu e-mail e aperte Ctrl+V.");
+            } catch (err) {
+                showToast("Erro ao tentar copiar para a área de transferência.");
+            }
+            document.body.removeChild(tempDiv);
+        }
+
+        // BAIXAR HTML (.html)
+        function downloadHTMLFile() {
+            select(null);
+            const tempBody = generateCleanHTML();
+            
+            const bgColor = emailWrapper.style.backgroundColor || '#ebebeb';
+            const innerBgColor = emailBody.style.backgroundColor || '#ffffff';
+            const bodyWidth = parseInt(emailBody.style.width) || 600;
+
+            const fullHTML = `<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Exportado - MailBuilder Pro</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: ${bgColor}; font-family: Arial, sans-serif;">
+    <center>
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" role="presentation" style="background-color: ${bgColor}; padding: 40px 0;">
+            <tr>
+                <td align="center" valign="top">
+                    <!-- Corpo do E-mail Restrito a ${bodyWidth}px -->
+                    <table width="${bodyWidth}" border="0" cellspacing="0" cellpadding="0" role="presentation" style="width: ${bodyWidth}px; max-width: 100%; margin: 0 auto; background-color: ${innerBgColor}; text-align: left; table-layout: fixed;">
+                        <tr>
+                            <td>
+                                ${tempBody.innerHTML}
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </center>
+</body>
+</html>`;
+
+            const blob = new Blob([fullHTML], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'modelo_email_builder.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showToast("Arquivo HTML baixado com sucesso!");
+        }
+
+        // BAIXAR PDF (.pdf)
+        function downloadPDF() {
+            select(null);
+            const tempBody = generateCleanHTML();
+            
+            const bodyWidth = parseInt(emailBody.style.width) || 600;
+            
+            // Criar um wrapper temporário escondido para medir e renderizar sem afetar a tela
+            const rootWrapper = document.createElement('div');
+            rootWrapper.style.position = 'absolute';
+            // Em vez de -9999px (que quebra a câmera do PDF), fica em 0,0 mas invisível por trás
+            rootWrapper.style.left = '0';
+            rootWrapper.style.top = '0';
+            rootWrapper.style.zIndex = '-9999';
+            rootWrapper.style.opacity = '0.001'; 
+            rootWrapper.style.pointerEvents = 'none';
+            rootWrapper.style.width = (bodyWidth + 80) + 'px'; // Largura do email + bordas do fundo cinza
+            rootWrapper.style.backgroundColor = emailWrapper.style.backgroundColor || '#ebebeb';
+            rootWrapper.style.padding = '40px';
+            rootWrapper.style.boxSizing = 'border-box';
+            
+            const innerContainer = document.createElement('div');
+            innerContainer.style.width = bodyWidth + 'px';
+            innerContainer.style.margin = '0 auto';
+            innerContainer.style.backgroundColor = emailBody.style.backgroundColor || '#ffffff';
+            
+            // Mover o conteúdo limpo para o container PDF
+            while(tempBody.firstChild) {
+                innerContainer.appendChild(tempBody.firstChild);
+            }
+            
+            rootWrapper.appendChild(innerContainer);
+            document.body.appendChild(rootWrapper);
+
+            showToast("Gerando PDF de alta qualidade, aguarde...");
+
+            // Pequeno delay para garantir que o navegador calculou as alturas (imagens, etc)
+            setTimeout(() => {
+                const w = rootWrapper.offsetWidth;
+                const h = rootWrapper.offsetHeight;
+
+                // Opções para gerar 1 página contínua com a altura exata do seu layout
+                const opt = {
+                    margin:       0,
+                    filename:     'apresentacao_email.pdf',
+                    image:        { type: 'jpeg', quality: 1 },
+                    html2canvas:  { scale: 2, useCORS: true, logging: false, scrollY: 0 },
+                    jsPDF:        { unit: 'px', format: [w, h], orientation: 'portrait' }
+                };
+
+                html2pdf().set(opt).from(rootWrapper).save().then(() => {
+                    document.body.removeChild(rootWrapper);
+                    showToast("PDF gerado e baixado com sucesso!");
+                }).catch(err => {
+                    document.body.removeChild(rootWrapper);
+                    showToast("Erro ao gerar PDF.");
+                    console.error(err);
+                });
+            }, 800); // Aumentei o tempo para 800ms para garantir que imagens foram pintadas na tela invisível
+        }
+
+        // IMPORTAR HTML (Lê o arquivo exportado)
+        function importHTMLModel(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const html = e.target.result;
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                
+                // Procurar pelas seções com a classe do nosso builder
+                const sections = doc.querySelectorAll('.main-section');
+                
+                if (sections.length > 0) {
+                    // Limpar canvas atual
+                    emailBody.innerHTML = '';
+                    if (canvasPlaceholder) canvasPlaceholder.style.display = 'none';
+
+                    sections.forEach(section => {
+                        // --- RESTAURAR CSS GRID (Desfazer tabelas de email para edição) ---
+                        const table = section.querySelector('table');
+                        if (table) {
+                            const zones = Array.from(table.querySelectorAll('.content-dropzone'));
+                            zones.forEach(zone => section.appendChild(zone));
+                            table.remove();
+                            section.style.display = 'grid';
+                            section.style.gridTemplateColumns = `repeat(${section.dataset.cols || 1}, 1fr)`;
+                        }
+
+                        emailBody.appendChild(section);
+                        
+                        // Reconectar os eventos e controles de seção
+                        rebindSectionControls(section);
+                        section.onclick = (ev) => { ev.stopPropagation(); select(section, 'section'); };
+
+                        // Reconectar as zonas de drop
+                        section.querySelectorAll('.content-dropzone').forEach(zone => {
+                            setupDropzone(zone);
+                            
+                            // Reconectar os blocos de conteúdo e textos
+                            zone.querySelectorAll('.content-block').forEach(block => {
+                                
+                                const bType = block.dataset.type;
+                                
+                                // Se for imagem importada sem link (removido no export), recria o link para voltar a ser editável
+                                if (bType === 'image') {
+                                    const imgEl = block.querySelector('img');
+                                    const linkEl = block.querySelector('.image-link');
+                                    if (!linkEl && imgEl) {
+                                        const a = document.createElement('a');
+                                        a.href = '';
+                                        a.className = 'image-link';
+                                        a.style.cssText = 'display: block; text-decoration: none; text-align: inherit; line-height: 0; font-size: 0;';
+                                        a.setAttribute('draggable', 'false');
+                                        // Restaura a estrutura
+                                        imgEl.parentNode.insertBefore(a, imgEl);
+                                        a.appendChild(imgEl);
+                                    }
+                                }
+
+                                // Devolver edição para os textos
+                                if (bType === 'text' || bType === 'text-box') {
+                                    const inner = block.querySelector('.block-inner');
+                                    if (inner) inner.setAttribute('contenteditable', 'true');
+                                }
+                                block.onclick = (ev) => { ev.stopPropagation(); ev.preventDefault(); select(block, 'block'); };
+                            });
+                        });
+                    });
+                    
+                    showToast("Modelo importado e reconstruído com sucesso!");
+                } else {
+                    showToast("Erro: O arquivo HTML não contém as estruturas geradas por este builder.");
+                }
+            };
+            reader.readAsText(file);
+            
+            // Resetar o input para permitir importar o mesmo arquivo novamente
+            event.target.value = '';
+        }
+    </script>
+</body>
+</html>
