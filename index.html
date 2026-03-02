@@ -780,6 +780,17 @@
                     createRange("Largura da Linha (%)", wVal, (v) => hrEl.style.width = v + '%', 10, 100);
                 } else if (bType === 'button') {
                     const linkEl = selectedEl.querySelector('a');
+                    
+                    const textGroup = createFieldGroup("Texto do Botão");
+                    const textInput = document.createElement('input');
+                    textInput.type = 'text';
+                    textInput.className = "w-full bg-[#1e1e1e] border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 mt-2 outline-none focus:border-indigo-500 transition-colors";
+                    textInput.value = linkEl ? linkEl.innerText : 'Botão';
+                    textInput.placeholder = "Ex: Clique Aqui";
+                    textInput.oninput = (e) => { if(linkEl) linkEl.innerText = e.target.value; };
+                    textGroup.appendChild(textInput);
+                    editorUI.appendChild(textGroup);
+
                     const linkGroup = createFieldGroup("Ação do Botão (URL)");
                     const linkInput = document.createElement('input');
                     linkInput.type = 'text';
