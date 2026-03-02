@@ -58,6 +58,19 @@
         }
         .main-section.selected .section-controls { display: flex; }
 
+        /* Controles Flutuantes do Bloco */
+        .block-controls {
+            display: none;
+            position: absolute;
+            right: -45px;
+            top: 0;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 60;
+        }
+        .content-block.selected .block-controls { display: flex; }
+        .control-btn.drag-handle { cursor: move; }
+
         .control-btn {
             background: #333;
             color: #ccc;
@@ -230,7 +243,8 @@
         let selectedEl = null;
         let selectedType = 'global'; 
         let activeTab = 'config';
-        let draggedType = null; // Armazena o que está sendo arrastado no momento
+        let draggedType = null; 
+        let draggedElement = null; // Guarda o bloco existente sendo movido
 
         function initApp() {
             renderPanel();
@@ -252,6 +266,7 @@
         // Limpar estados de drag se o usuário cancelar soltando fora
         document.addEventListener('dragend', () => {
             draggedType = null;
+            draggedElement = null;
             document.body.classList.remove('dragging-active');
             const secIndicator = document.getElementById('section-drop-indicator');
             if (secIndicator) secIndicator.remove();
@@ -318,6 +333,7 @@
                 createMainSection(insertBeforeElement);
             }
             draggedType = null;
+            draggedElement = null;
             document.body.classList.remove('dragging-active');
         }
 
@@ -374,6 +390,72 @@
             section.insertBefore(controls, section.firstChild);
         }
 
+        // --- SISTEMA DE BLOCOS E CONTROLES (NOVO) ---
+
+        // Anexa o menu flutuante lateral ao bloco
+        function appendBlockControls(block) {
+            if (!block.querySelector('.block-controls')) {
+                const controls = document.createElement('div');
+                controls.className = 'block-controls';
+                controls.innerHTML = `
+                    <button class="control-btn drag-handle" title="Mover Bloco"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/></svg></button>
+                    <button class="control-btn" onclick="duplicateBlock(this, event)" title="Duplicar Bloco"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/></svg></button>
+                    <button class="control-btn hover:text-red-500 transition-colors" onclick="deleteElement(this, 'block'); event.stopPropagation();" title="Deletar Bloco"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+                `;
+                block.appendChild(controls);
+            }
+        }
+
+        // Duplica um bloco e clona todas as suas características
+        function duplicateBlock(btn, event) {
+            if (event) {
+                event.stopPropagation();
+                event.preventDefault();
+            }
+            const block = btn.closest('.content-block');
+            const clone = block.cloneNode(true);
+            
+            clone.classList.remove('selected'); // Remove visualização do clone inicial
+            
+            block.parentNode.insertBefore(clone, block.nextSibling);
+            bindBlockEvents(clone);
+            select(clone, 'block');
+        }
+
+        // Atribui eventos de clique e Drag&Drop a cada bloco específico
+        function bindBlockEvents(block) {
+            block.onclick = (e) => { e.stopPropagation(); select(block, 'block'); };
+            
+            const handle = block.querySelector('.drag-handle');
+            if (handle) {
+                // Apenas torna o bloco "arrastável" quando o mouse clica especificamente no ícone de mover
+                handle.onmousedown = () => block.setAttribute('draggable', 'true');
+                handle.onmouseup = () => block.removeAttribute('draggable');
+                handle.onmouseleave = () => block.removeAttribute('draggable');
+            }
+
+            block.ondragstart = (e) => {
+                e.dataTransfer.setData('type', 'existing-block');
+                e.dataTransfer.effectAllowed = 'move';
+                draggedType = 'existing-block';
+                draggedElement = block;
+                document.body.classList.add('dragging-active');
+                
+                // Leve atraso para permitir que o navegador tire a "foto" do fantasma para arrastar
+                setTimeout(() => block.style.opacity = '0.4', 0);
+            };
+
+            block.ondragend = (e) => {
+                block.removeAttribute('draggable');
+                block.style.opacity = '1';
+                draggedType = null;
+                draggedElement = null;
+                document.body.classList.remove('dragging-active');
+                const indicator = document.getElementById('block-drop-indicator');
+                if (indicator) indicator.remove();
+            };
+        }
+
         // Calculadora para achar a posição entre os blocos
         function getInsertPositionBlock(y, elements) {
             return elements.reduce((closest, child) => {
@@ -393,7 +475,8 @@
                 e.preventDefault(); 
                 e.stopPropagation();
 
-                const blocks = [...zone.querySelectorAll('.content-block')];
+                // Ignora o elemento que está sendo arrastado para calcular a posição do fantasma corretamente
+                const blocks = [...zone.querySelectorAll('.content-block')].filter(b => b !== draggedElement);
                 let indicator = document.getElementById('block-drop-indicator');
                 
                 if (!indicator) {
@@ -430,10 +513,22 @@
                 if (indicator) indicator.remove();
 
                 const type = e.dataTransfer.getData('type');
-                if (type && type !== 'section') {
+                
+                // Mover bloco existente
+                if (type === 'existing-block' && draggedElement) {
+                    if (insertBeforeElement) {
+                        zone.insertBefore(draggedElement, insertBeforeElement);
+                    } else {
+                        zone.appendChild(draggedElement);
+                    }
+                } 
+                // Adicionar novo bloco da barra
+                else if (type && type !== 'section' && type !== 'existing-block') {
                     addContentBlock(zone, type, insertBeforeElement);
                 }
+                
                 draggedType = null;
+                draggedElement = null;
                 document.body.classList.remove('dragging-active');
             };
         }
@@ -480,7 +575,8 @@
                 block.innerHTML = `<div class="block-inner" style="text-align: center;"><a href="#" style="display: inline-block; padding: 12px 40px; background-color: #4f46e5; color: #ffffff; font-weight: bold; border-radius: 8px; font-size: 14px; text-decoration: none; text-transform: uppercase;">Botão</a></div>`;
             }
 
-            block.onclick = (e) => { e.stopPropagation(); e.preventDefault(); select(block, 'block'); };
+            appendBlockControls(block);
+            bindBlockEvents(block);
             
             // Inserir no local escolhido visualmente
             if (insertBeforeElement) {
@@ -805,14 +901,6 @@
             
             renderSpacingControl("Preenchimento no Desktop", "padding");
             renderSpacingControl("Margens no Desktop", "margin");
-            
-            if (selectedType === 'block') {
-                const delBtn = document.createElement('button');
-                delBtn.className = "w-full py-3 mt-4 text-[10px] font-black uppercase bg-red-900/20 text-red-500 rounded border border-red-900/30 hover:bg-red-900/40 transition";
-                delBtn.innerText = "Eliminar Bloco";
-                delBtn.onclick = () => deleteElement(selectedEl, 'block');
-                editorUI.appendChild(delBtn);
-            }
         }
 
         function renderStyleTab() {
@@ -1003,7 +1091,7 @@
             const tempBody = emailBody.cloneNode(true);
             
             // Limpa controles visuais e placeholder
-            tempBody.querySelectorAll('.section-controls, #canvas-placeholder').forEach(el => el.remove());
+            tempBody.querySelectorAll('.section-controls, .block-controls, #canvas-placeholder').forEach(el => el.remove());
             
             // Remove o estado de selecionado visualmente
             tempBody.querySelectorAll('.main-section, .content-block').forEach(el => {
@@ -1315,7 +1403,10 @@
                                     const inner = block.querySelector('.block-inner');
                                     if (inner) inner.setAttribute('contenteditable', 'true');
                                 }
-                                block.onclick = (ev) => { ev.stopPropagation(); ev.preventDefault(); select(block, 'block'); };
+                                
+                                // Reconstruir o painel flutuante e recriar as funções drag&drop nativas do bloco
+                                appendBlockControls(block);
+                                bindBlockEvents(block);
                             });
                         });
                     });
