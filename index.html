@@ -113,16 +113,19 @@
             border-radius: 2px;
         }
 
-        /* Estilos básicos para listas no editor */
-        .block-inner ul { list-style-type: disc; margin-left: 20px; padding-left: 0; margin-top: 5px; margin-bottom: 5px; }
-        .block-inner ol { list-style-type: decimal; margin-left: 20px; padding-left: 0; margin-top: 5px; margin-bottom: 5px; }
-        
-        /* Força a herança de estilos (fonte, cor, tamanho) para parágrafos e listas internos */
-        .block-inner p, .block-inner ul, .block-inner ol, .block-inner li, .block-inner span, .block-inner div {
-            font-family: inherit;
-            font-size: inherit;
-            color: inherit;
-            line-height: inherit;
+        /* Correção DEFINITIVA para listas, forçando a exibição sobrepondo o Tailwind */
+        .block-inner ul { 
+            list-style-type: disc !important; 
+            padding-left: 20px !important; 
+            margin: 10px 0 !important; 
+        }
+        .block-inner ol { 
+            list-style-type: decimal !important; 
+            padding-left: 20px !important; 
+            margin: 10px 0 !important; 
+        }
+        .block-inner li {
+            display: list-item !important;
         }
 
         .tab-btn { color: #71717a; transition: 0.2s; }
@@ -432,6 +435,19 @@
             block.parentNode.insertBefore(clone, block.nextSibling);
             bindBlockEvents(clone);
             select(clone, 'block');
+        }
+
+        // Força a aplicação do estilo escolhido a todos os elementos internos do texto
+        function applyStyleToTextContent(block, property, value) {
+            block.style[property] = value;
+            const inner = block.querySelector('.block-inner');
+            if (inner) {
+                inner.style[property] = value;
+                // Varre os filhos (p, span, ul, li) para remover estilos fixos antigos que atrapalham a mudança geral
+                inner.querySelectorAll('*').forEach(child => {
+                    child.style[property] = ''; 
+                });
+            }
         }
 
         // Atribui eventos de clique, Drag&Drop e Paste a cada bloco específico
@@ -967,9 +983,7 @@
                         ffSelect.appendChild(opt);
                     });
                     ffSelect.onchange = (e) => {
-                        selectedEl.style.fontFamily = e.target.value;
-                        const inner = selectedEl.querySelector('.block-inner');
-                        if (inner) inner.style.fontFamily = e.target.value;
+                        applyStyleToTextContent(selectedEl, 'fontFamily', e.target.value);
                     };
                     ffGroup.appendChild(ffSelect);
                     editorUI.appendChild(ffGroup);
@@ -984,18 +998,13 @@
                         fsSelect.appendChild(opt);
                     });
                     fsSelect.onchange = (e) => {
-                        const newSize = e.target.value + 'px';
-                        selectedEl.style.fontSize = newSize;
-                        const inner = selectedEl.querySelector('.block-inner');
-                        if (inner) inner.style.fontSize = newSize;
+                        applyStyleToTextContent(selectedEl, 'fontSize', e.target.value + 'px');
                     };
                     fsGroup.appendChild(fsSelect);
                     editorUI.appendChild(fsGroup);
 
                     createColorPicker("Cor da Fonte", selectedEl.style.color || "#333333", (v) => {
-                        selectedEl.style.color = v;
-                        const inner = selectedEl.querySelector('.block-inner');
-                        if (inner) inner.style.color = v;
+                        applyStyleToTextContent(selectedEl, 'color', v);
                     });
 
                     const lhGroup = createFieldGroup("Altura da Linha");
@@ -1003,7 +1012,9 @@
                     lhInput.type = 'number'; lhInput.step = '0.1';
                     lhInput.className = "w-full bg-[#1e1e1e] border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 mt-2 outline-none focus:border-indigo-500";
                     lhInput.value = parseFloat(selectedEl.style.lineHeight) || 1.5;
-                    lhInput.oninput = (e) => selectedEl.style.lineHeight = e.target.value;
+                    lhInput.oninput = (e) => {
+                        applyStyleToTextContent(selectedEl, 'lineHeight', e.target.value);
+                    };
                     lhGroup.appendChild(lhInput);
                     editorUI.appendChild(lhGroup);
 
@@ -1159,30 +1170,19 @@
                 }
             });
 
-            // Insere espaçamentos inline de fallback para listas e propaga os estilos do bloco para dentro (Outlook/Gmail format)
-            tempBody.querySelectorAll('.content-block').forEach(block => {
-                const inner = block.querySelector('.block-inner');
-                if (inner) {
-                    const fontFamily = inner.style.fontFamily || block.style.fontFamily;
-                    const fontSize = inner.style.fontSize || block.style.fontSize;
-                    const color = inner.style.color || block.style.color;
-                    const lineHeight = inner.style.lineHeight || block.style.lineHeight;
-
-                    // Propaga para filhos para garantir que emails não percam a formatação em tópicos/parágrafos
-                    inner.querySelectorAll('p, ul, ol, li, span, div, a').forEach(child => {
-                        if (fontFamily && !child.style.fontFamily) child.style.fontFamily = fontFamily;
-                        if (fontSize && !child.style.fontSize) child.style.fontSize = fontSize;
-                        if (color && !child.style.color) child.style.color = color;
-                        if (lineHeight && !child.style.lineHeight) child.style.lineHeight = lineHeight;
-                    });
-                }
-            });
-
+            // Insere espaçamentos inline de fallback para listas, garantindo renderização correta em Outlook/Gmail
             tempBody.querySelectorAll('ul').forEach(ul => {
-                ul.style.margin = '5px 0 5px 20px';
+                ul.style.listStyleType = 'disc';
+                ul.style.paddingLeft = '20px';
+                ul.style.margin = '10px 0';
             });
             tempBody.querySelectorAll('ol').forEach(ol => {
-                ol.style.margin = '5px 0 5px 20px';
+                ol.style.listStyleType = 'decimal';
+                ol.style.paddingLeft = '20px';
+                ol.style.margin = '10px 0';
+            });
+            tempBody.querySelectorAll('li').forEach(li => {
+                li.style.display = 'list-item';
             });
 
             // --- CONVERSÃO CRÍTICA PARA E-MAIL (FIX PARA OUTLOOK/GMAIL) ---
