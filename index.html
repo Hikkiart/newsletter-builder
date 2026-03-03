@@ -562,7 +562,7 @@
             } else if (type === 'image') {
                 block.innerHTML = `
                     <div class="block-inner" style="text-align: center; line-height: 0; font-size: 0;">
-                        <a href="" class="image-link" style="display: block; text-decoration: none; text-align: inherit; line-height: 0; font-size: 0;" draggable="false">
+                        <a class="image-link" style="display: block; text-decoration: none; text-align: inherit; line-height: 0; font-size: 0;" draggable="false">
                             <img src="https://via.placeholder.com/600x200?text=Sua+Imagem" class="block-img" alt="" draggable="false" style="display: inline-block; max-width: 100%; height: auto; border-radius: 0px; width: 100%; border: none; vertical-align: middle; margin: 0; padding: 0;">
                         </a>
                     </div>`;
@@ -572,7 +572,7 @@
                         <hr class="divider-el" style="border: 0; border-top: 2px solid #e5e7eb; margin: 0 auto; width: 100%;">
                     </div>`;
             } else if (type === 'button') {
-                block.innerHTML = `<div class="block-inner" style="text-align: center;"><a href="#" style="display: inline-block; padding: 12px 40px; background-color: #4f46e5; color: #ffffff; font-weight: bold; border-radius: 8px; font-size: 14px; text-decoration: none; text-transform: uppercase;">Botão</a></div>`;
+                block.innerHTML = `<div class="block-inner" style="text-align: center;"><a style="display: inline-block; padding: 12px 40px; background-color: #4f46e5; color: #ffffff; font-weight: bold; border-radius: 8px; font-size: 14px; text-decoration: none; text-transform: uppercase;">Botão</a></div>`;
             }
 
             appendBlockControls(block);
@@ -862,9 +862,14 @@
                     const linkInput = document.createElement('input');
                     linkInput.type = 'text';
                     linkInput.className = "w-full bg-[#1e1e1e] border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 mt-2 outline-none focus:border-indigo-500 transition-colors";
-                    linkInput.value = linkEl ? linkEl.getAttribute('href') : '';
+                    linkInput.value = (linkEl && linkEl.hasAttribute('href')) ? linkEl.getAttribute('href') : '';
                     linkInput.placeholder = "https://...";
-                    linkInput.oninput = (e) => { if(linkEl) linkEl.setAttribute('href', e.target.value); };
+                    linkInput.oninput = (e) => { 
+                        if(linkEl) {
+                            if(e.target.value) linkEl.setAttribute('href', e.target.value);
+                            else linkEl.removeAttribute('href');
+                        }
+                    };
                     linkGroup.appendChild(linkInput);
                     editorUI.appendChild(linkGroup);
 
@@ -891,9 +896,14 @@
                     const linkInput = document.createElement('input');
                     linkInput.type = 'text';
                     linkInput.className = "w-full bg-[#1e1e1e] border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 mt-2 outline-none focus:border-indigo-500 transition-colors";
-                    linkInput.value = linkEl ? linkEl.getAttribute('href') : '';
+                    linkInput.value = (linkEl && linkEl.hasAttribute('href')) ? linkEl.getAttribute('href') : '';
                     linkInput.placeholder = "https://...";
-                    linkInput.oninput = (e) => { if(linkEl) linkEl.setAttribute('href', e.target.value); };
+                    linkInput.oninput = (e) => { 
+                        if(linkEl) {
+                            if(e.target.value) linkEl.setAttribute('href', e.target.value);
+                            else linkEl.removeAttribute('href');
+                        }
+                    };
                     linkGroup.appendChild(linkInput);
                     editorUI.appendChild(linkGroup);
                 }
@@ -1081,9 +1091,14 @@
             return "#" + ("0" + parseInt(p[1],10).toString(16)).slice(-2) + ("0" + parseInt(p[2],10).toString(16)).slice(-2) + ("0" + parseInt(p[3],10).toString(16)).slice(-2);
         }
 
-        document.querySelector('.canvas-area').onclick = (e) => {
+        // Listener global de clique no painel central do editor (previne saltos de tela de <a>)
+        document.querySelector('.canvas-area').addEventListener('click', (e) => {
+            const link = e.target.closest('a');
+            if (link) {
+                e.preventDefault();
+            }
             if (e.target.id === 'email-wrapper' || e.target.classList.contains('canvas-area')) select(null);
-        };
+        });
 
         // --- SISTEMAS DE EXPORTAÇÃO E IMPORTAÇÃO ---
 
@@ -1388,7 +1403,6 @@
                                     const linkEl = block.querySelector('.image-link');
                                     if (!linkEl && imgEl) {
                                         const a = document.createElement('a');
-                                        a.href = '';
                                         a.className = 'image-link';
                                         a.style.cssText = 'display: block; text-decoration: none; text-align: inherit; line-height: 0; font-size: 0;';
                                         a.setAttribute('draggable', 'false');
