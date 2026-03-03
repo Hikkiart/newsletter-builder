@@ -113,6 +113,10 @@
             border-radius: 2px;
         }
 
+        /* Estilos básicos para listas no editor */
+        .block-inner ul { list-style-type: disc; margin-left: 24px; padding-left: 0; margin-top: 8px; margin-bottom: 8px; }
+        .block-inner ol { list-style-type: decimal; margin-left: 24px; padding-left: 0; margin-top: 8px; margin-bottom: 8px; }
+
         .tab-btn { color: #71717a; transition: 0.2s; }
         .tab-btn.tab-active { border-bottom: 2px solid #6366f1; color: #fff; }
         
@@ -422,9 +426,28 @@
             select(clone, 'block');
         }
 
-        // Atribui eventos de clique e Drag&Drop a cada bloco específico
+        // Atribui eventos de clique, Drag&Drop e Paste a cada bloco específico
         function bindBlockEvents(block) {
-            block.onclick = (e) => { e.stopPropagation(); select(block, 'block'); };
+            block.onclick = (e) => { 
+                e.stopPropagation(); 
+                // Intercepta qualquer clique em link para não recarregar a página
+                if(e.target.closest('a')) {
+                    e.preventDefault();
+                }
+                select(block, 'block'); 
+            };
+
+            // Evento para colar apenas texto puro (sem tags e estilos misturados)
+            const editable = block.querySelector('[contenteditable="true"]');
+            if (editable) {
+                editable.onpaste = (e) => {
+                    e.preventDefault();
+                    // Obtém o texto limpo da área de transferência
+                    const text = (e.originalEvent || e).clipboardData.getData('text/plain');
+                    // Insere o texto onde o cursor está
+                    document.execCommand('insertText', false, text);
+                };
+            }
             
             const handle = block.querySelector('.drag-handle');
             if (handle) {
@@ -815,6 +838,24 @@
                     formatGroup.appendChild(fBts);
                     editorUI.appendChild(formatGroup);
 
+                    // Listas
+                    const listGroup = createFieldGroup("Listas (Tópicos)");
+                    const listBtns = document.createElement('div');
+                    listBtns.className = "flex gap-1 mt-2 bg-[#1e1e1e] p-1 rounded border border-zinc-800";
+                    const lists = [
+                        { label: '• Marcadores', cmd: 'insertUnorderedList' },
+                        { label: '1. Números', cmd: 'insertOrderedList' }
+                    ];
+                    lists.forEach(l => {
+                        const btn = document.createElement('button');
+                        btn.className = "flex-1 py-1.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition";
+                        btn.innerText = l.label;
+                        btn.onclick = () => document.execCommand(l.cmd, false, null);
+                        listBtns.appendChild(btn);
+                    });
+                    listGroup.appendChild(listBtns);
+                    editorUI.appendChild(listGroup);
+
                     const alignGroup = createFieldGroup("Alinhamento no Desktop");
                     const aBtns = document.createElement('div');
                     aBtns.className = "flex gap-1 mt-2 bg-[#1e1e1e] p-1 rounded border border-zinc-800";
@@ -1091,7 +1132,7 @@
             return "#" + ("0" + parseInt(p[1],10).toString(16)).slice(-2) + ("0" + parseInt(p[2],10).toString(16)).slice(-2) + ("0" + parseInt(p[3],10).toString(16)).slice(-2);
         }
 
-        // Listener global de clique no painel central do editor (previne saltos de tela de <a>)
+        // Listener global de clique no painel central do editor (previne saltos de tela de <a> globais)
         document.querySelector('.canvas-area').addEventListener('click', (e) => {
             const link = e.target.closest('a');
             if (link) {
@@ -1121,6 +1162,14 @@
                     link.parentNode.insertBefore(img, link);
                     link.remove();
                 }
+            });
+
+            // Insere espaçamentos inline de fallback para listas (Outlook/Gmail format)
+            tempBody.querySelectorAll('ul').forEach(ul => {
+                ul.style.margin = '10px 0 10px 24px';
+            });
+            tempBody.querySelectorAll('ol').forEach(ol => {
+                ol.style.margin = '10px 0 10px 24px';
             });
 
             // --- CONVERSÃO CRÍTICA PARA E-MAIL (FIX PARA OUTLOOK/GMAIL) ---
