@@ -114,8 +114,16 @@
         }
 
         /* Estilos básicos para listas no editor */
-        .block-inner ul { list-style-type: disc; margin-left: 24px; padding-left: 0; margin-top: 8px; margin-bottom: 8px; }
-        .block-inner ol { list-style-type: decimal; margin-left: 24px; padding-left: 0; margin-top: 8px; margin-bottom: 8px; }
+        .block-inner ul { list-style-type: disc; margin-left: 20px; padding-left: 0; margin-top: 5px; margin-bottom: 5px; }
+        .block-inner ol { list-style-type: decimal; margin-left: 20px; padding-left: 0; margin-top: 5px; margin-bottom: 5px; }
+        
+        /* Força a herança de estilos (fonte, cor, tamanho) para parágrafos e listas internos */
+        .block-inner p, .block-inner ul, .block-inner ol, .block-inner li, .block-inner span, .block-inner div {
+            font-family: inherit;
+            font-size: inherit;
+            color: inherit;
+            line-height: inherit;
+        }
 
         .tab-btn { color: #71717a; transition: 0.2s; }
         .tab-btn.tab-active { border-bottom: 2px solid #6366f1; color: #fff; }
@@ -444,7 +452,7 @@
                     e.preventDefault();
                     // Obtém o texto limpo da área de transferência
                     const text = (e.originalEvent || e).clipboardData.getData('text/plain');
-                    // Insere o texto onde o cursor está
+                    // Insere o texto onde o cursor está preservando apenas as quebras de linha
                     document.execCommand('insertText', false, text);
                 };
             }
@@ -806,19 +814,6 @@
                 const bType = selectedEl.dataset.type;
                 
                 if (bType === 'text' || bType === 'text-box') {
-                    const pGroup = createFieldGroup("Estilo do Parágrafo");
-                    const pBtns = document.createElement('div');
-                    pBtns.className = "flex gap-1 mt-2 bg-[#1e1e1e] p-1 rounded border border-zinc-800";
-                    ['P', 'H1', 'H2', 'H3', 'H4'].forEach(tag => {
-                        const btn = document.createElement('button');
-                        btn.className = "flex-1 py-1.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition";
-                        btn.innerText = tag;
-                        btn.onclick = () => document.execCommand('formatBlock', false, tag);
-                        pBtns.appendChild(btn);
-                    });
-                    pGroup.appendChild(pBtns);
-                    editorUI.appendChild(pGroup);
-
                     const formatGroup = createFieldGroup("Estilo de Texto");
                     const fBts = document.createElement('div');
                     fBts.className = "flex gap-1 mt-2 bg-[#1e1e1e] p-1 rounded border border-zinc-800";
@@ -1164,12 +1159,30 @@
                 }
             });
 
-            // Insere espaçamentos inline de fallback para listas (Outlook/Gmail format)
+            // Insere espaçamentos inline de fallback para listas e propaga os estilos do bloco para dentro (Outlook/Gmail format)
+            tempBody.querySelectorAll('.content-block').forEach(block => {
+                const inner = block.querySelector('.block-inner');
+                if (inner) {
+                    const fontFamily = inner.style.fontFamily || block.style.fontFamily;
+                    const fontSize = inner.style.fontSize || block.style.fontSize;
+                    const color = inner.style.color || block.style.color;
+                    const lineHeight = inner.style.lineHeight || block.style.lineHeight;
+
+                    // Propaga para filhos para garantir que emails não percam a formatação em tópicos/parágrafos
+                    inner.querySelectorAll('p, ul, ol, li, span, div, a').forEach(child => {
+                        if (fontFamily && !child.style.fontFamily) child.style.fontFamily = fontFamily;
+                        if (fontSize && !child.style.fontSize) child.style.fontSize = fontSize;
+                        if (color && !child.style.color) child.style.color = color;
+                        if (lineHeight && !child.style.lineHeight) child.style.lineHeight = lineHeight;
+                    });
+                }
+            });
+
             tempBody.querySelectorAll('ul').forEach(ul => {
-                ul.style.margin = '10px 0 10px 24px';
+                ul.style.margin = '5px 0 5px 20px';
             });
             tempBody.querySelectorAll('ol').forEach(ol => {
-                ol.style.margin = '10px 0 10px 24px';
+                ol.style.margin = '5px 0 5px 20px';
             });
 
             // --- CONVERSÃO CRÍTICA PARA E-MAIL (FIX PARA OUTLOOK/GMAIL) ---
