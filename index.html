@@ -6,6 +6,8 @@
     <title>Mail Builder Pro - Import/Export Ready</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body { background-color: #1e1e1e; }
         .tool-sidebar { width: 85px; background-color: #333333; border-right: 1px solid #111; }
@@ -179,7 +181,8 @@
             <button onclick="document.getElementById('import-file').click()" class="bg-[#444] hover:bg-[#555] text-white text-[10px] px-3 py-2 rounded font-bold uppercase transition" title="Importar arquivo HTML gerado por este editor">Importar</button>
             <button onclick="copyForEmail()" class="bg-[#444] hover:bg-[#555] text-white text-[10px] px-3 py-2 rounded font-bold uppercase transition" title="Copia o conteúdo para colar visualmente no Gmail/Outlook">Copiar Visual</button>
             <button onclick="downloadHTMLFile()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] px-3 py-2 rounded font-bold uppercase transition shadow-lg">Baixar HTML</button>
-            <button onclick="downloadPDF()" class="bg-red-600 hover:bg-red-500 text-white text-[10px] px-3 py-2 rounded font-bold uppercase transition shadow-lg">Baixar PDF</button>
+            <button onclick="downloadPDF()" class="bg-red-600 hover:bg-red-500 text-white text-[10px] px-3 py-2 rounded font-bold uppercase transition shadow-lg">PDF Contínuo</button>
+            <button onclick="downloadImagesZip()" class="bg-orange-600 hover:bg-orange-500 text-white text-[10px] px-3 py-2 rounded font-bold uppercase transition shadow-lg">ZIP Imagens (16:9)</button>
         </div>
     </header>
 
@@ -1170,6 +1173,21 @@
                 }
             });
 
+            // Adiciona propriedades inline nos parágrafos para garantir o suporte de cor e fonte em tópicos
+            tempBody.querySelectorAll('.content-block[data-type="text"], .content-block[data-type="text-box"]').forEach(block => {
+                const fontFamily = block.style.fontFamily;
+                const fontSize = block.style.fontSize;
+                const color = block.style.color;
+                const lineHeight = block.style.lineHeight;
+                
+                block.querySelectorAll('p, ul, ol, li, span, div, a').forEach(child => {
+                    if (fontFamily && !child.style.fontFamily) child.style.fontFamily = fontFamily;
+                    if (fontSize && !child.style.fontSize) child.style.fontSize = fontSize;
+                    if (color && !child.style.color) child.style.color = color;
+                    if (lineHeight && !child.style.lineHeight) child.style.lineHeight = lineHeight;
+                });
+            });
+
             // Insere espaçamentos inline de fallback para listas, garantindo renderização correta em Outlook/Gmail
             tempBody.querySelectorAll('ul').forEach(ul => {
                 ul.style.listStyleType = 'disc';
@@ -1356,62 +1374,183 @@
         // BAIXAR PDF (.pdf)
         function downloadPDF() {
             select(null);
-            const tempBody = generateCleanHTML();
+            showToast("Preparando o PDF... Aguarde.");
             
-            const bodyWidth = parseInt(emailBody.style.width) || 600;
+            // Geramos o HTML limpo (usando a conversão para tabelas que já garante estabilidade visual)
+            const cleanBody = generateCleanHTML();
             
-            // Criar um wrapper temporário escondido para medir e renderizar sem afetar a tela
-            const rootWrapper = document.createElement('div');
-            rootWrapper.style.position = 'absolute';
-            // Em vez de -9999px (que quebra a câmera do PDF), fica em 0,0 mas invisível por trás
-            rootWrapper.style.left = '0';
-            rootWrapper.style.top = '0';
-            rootWrapper.style.zIndex = '-9999';
-            rootWrapper.style.opacity = '0.001'; 
-            rootWrapper.style.pointerEvents = 'none';
-            rootWrapper.style.width = (bodyWidth + 80) + 'px'; // Largura do email + bordas do fundo cinza
-            rootWrapper.style.backgroundColor = emailWrapper.style.backgroundColor || '#ebebeb';
-            rootWrapper.style.padding = '40px';
-            rootWrapper.style.boxSizing = 'border-box';
+            const bodyWidth = emailBody.offsetWidth || parseInt(emailBody.style.width) || 600;
             
-            const innerContainer = document.createElement('div');
-            innerContainer.style.width = bodyWidth + 'px';
-            innerContainer.style.margin = '0 auto';
-            innerContainer.style.backgroundColor = emailBody.style.backgroundColor || '#ffffff';
+            // Pegamos a altura total e arredondamos para cima para remover frações decimais
+            const wrapperHeight = Math.ceil(emailBody.scrollHeight) || 800;
+            const format = [bodyWidth, wrapperHeight + 2]; // +2 de folga para evitar página extra
             
-            // Mover o conteúdo limpo para o container PDF
-            while(tempBody.firstChild) {
-                innerContainer.appendChild(tempBody.firstChild);
+            // Montamos uma string de HTML isolada. 
+            // O overflow: hidden previne que conteúdos vazem para fora da div e criem uma página fantasma.
+            const htmlString = `
+                <div style="width: ${bodyWidth}px; height: ${wrapperHeight}px; overflow: hidden; background-color: ${emailBody.style.backgroundColor || '#ffffff'}; margin: 0; padding: 0; box-sizing: border-box;">
+                    ${cleanBody.innerHTML}
+                </div>
+            `;
+
+            // scale: 4 gera uma imagem absurdamente nítida
+            const opt = {
+                margin:       0,
+                filename:     'apresentacao_email.pdf',
+                image:        { type: 'jpeg', quality: 1 },
+                html2canvas:  { scale: 4, useCORS: true, logging: false },
+                jsPDF:        { unit: 'px', format: format, orientation: 'portrait' }
+            };
+
+            // A biblioteca html2pdf aceita strings HTML diretamente e renderiza internamente
+            html2pdf().set(opt).from(htmlString).save().then(() => {
+                showToast("PDF transferido com sucesso!");
+            }).catch(err => {
+                console.error(err);
+                showToast("Erro ao gerar PDF.");
+            });
+        }
+
+        // BAIXAR IMAGENS EM ZIP (Fatias Verticais Inteligentes usando Divisores como Quebra de Página)
+        function downloadImagesZip() {
+            select(null);
+            showToast("Calculando páginas e gerando ZIP... Aguarde.");
+
+            // Adiciona uma marcação temporária a cada bloco identificando a que "página" ele pertence
+            const blocks = Array.from(emailBody.querySelectorAll('.content-block'));
+            let pageIdx = 0;
+            
+            blocks.forEach(block => {
+                if (block.dataset.type === 'divider') {
+                    block.dataset.pdfPage = 'divider';
+                    pageIdx++; // Cada vez que encontra um divisor, o bloco seguinte vai para a próxima página
+                } else {
+                    block.dataset.pdfPage = pageIdx.toString();
+                }
+            });
+
+            const totalPages = pageIdx + 1; // Se há 1 divisor, há 2 páginas
+            const bodyWidth = emailBody.offsetWidth || parseInt(emailBody.style.width) || 600;
+
+            // Elemento fantasma no DOM onde vamos gerar as páginas
+            const printWrapper = document.createElement('div');
+            printWrapper.style.position = 'absolute';
+            printWrapper.style.top = '0';
+            printWrapper.style.left = '0';
+            printWrapper.style.zIndex = '-100'; 
+            printWrapper.style.width = bodyWidth + 'px';
+            printWrapper.style.backgroundColor = emailWrapper.style.backgroundColor || '#ebebeb';
+            document.body.appendChild(printWrapper);
+
+            const pagesDOM = [];
+
+            // Constrói cada página individualmente
+            for (let i = 0; i < totalPages; i++) {
+                // generateCleanHTML clona a estrutura inteira e converte os grids para table
+                const cleanClone = generateCleanHTML();
+                
+                // Remove todos os blocos que NÃO pertençam a esta página específica (e remove os próprios divisores)
+                cleanClone.querySelectorAll('.content-block').forEach(block => {
+                    if (block.dataset.pdfPage === 'divider' || parseInt(block.dataset.pdfPage) !== i) {
+                        block.remove();
+                    }
+                });
+
+                // Limpa secções que acabaram por ficar completamente vazias após a remoção dos blocos
+                cleanClone.querySelectorAll('.main-section').forEach(sec => {
+                    if (!sec.querySelector('.content-block')) {
+                        sec.remove();
+                    }
+                });
+
+                // Embrulha a página numa div garantindo as regras visuais
+                const pageContainer = document.createElement('div');
+                pageContainer.style.width = bodyWidth + 'px';
+                pageContainer.style.backgroundColor = emailBody.style.backgroundColor || '#ffffff';
+                pageContainer.style.boxSizing = 'border-box';
+                pageContainer.style.overflow = 'hidden';
+                pageContainer.style.display = 'block';
+                
+                pageContainer.appendChild(cleanClone);
+                printWrapper.appendChild(pageContainer);
+                pagesDOM.push(pageContainer);
             }
-            
-            rootWrapper.appendChild(innerContainer);
-            document.body.appendChild(rootWrapper);
 
-            showToast("Gerando PDF de alta qualidade, aguarde...");
+            // Limpa as etiquetas temporárias do painel ao vivo
+            blocks.forEach(block => delete block.dataset.pdfPage);
 
-            // Pequeno delay para garantir que o navegador calculou as alturas (imagens, etc)
+            const overlay = document.createElement('div');
+            overlay.style.position = 'fixed';
+            overlay.style.inset = '0';
+            overlay.style.backgroundColor = '#1e1e1e';
+            overlay.style.zIndex = '9999';
+            overlay.style.display = 'flex';
+            overlay.style.flexDirection = 'column';
+            overlay.style.alignItems = 'center';
+            overlay.style.justifyContent = 'center';
+            overlay.innerHTML = `
+                <svg class="animate-spin h-10 w-10 text-orange-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <span class="text-zinc-300 font-black uppercase tracking-widest text-xs mt-2" id="progress-text">Preparando ${totalPages} imagens...</span>
+            `;
+            document.body.appendChild(overlay);
+
             setTimeout(() => {
-                const w = rootWrapper.offsetWidth;
-                const h = rootWrapper.offsetHeight;
+                const zip = new JSZip();
+                const progressText = document.getElementById('progress-text');
 
-                // Opções para gerar 1 página contínua com a altura exata do seu layout
-                const opt = {
-                    margin:       0,
-                    filename:     'apresentacao_email.pdf',
-                    image:        { type: 'jpeg', quality: 1 },
-                    html2canvas:  { scale: 2, useCORS: true, logging: false, scrollY: 0 },
-                    jsPDF:        { unit: 'px', format: [w, h], orientation: 'portrait' }
+                // Processa cada página gerada pelo divisor
+                const capturePage = (index) => {
+                    if (index >= totalPages) {
+                        progressText.innerText = "Empacotando ZIP, já vai transferir...";
+                        zip.generateAsync({type:"blob"}).then(function(content) {
+                            const url = URL.createObjectURL(content);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `email_carrossel_${totalPages}_imgs.zip`; 
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+
+                            document.body.removeChild(printWrapper);
+                            document.body.removeChild(overlay);
+                            showToast("ZIP com Imagens transferido!");
+                        });
+                        return;
+                    }
+
+                    progressText.innerText = `Renderizando imagem ${index + 1} de ${totalPages}...`;
+
+                    // A escala de "3" assegura uma foto limpa antes de ser convertida para Base64
+                    html2canvas(pagesDOM[index], { scale: 3, useCORS: true, logging: false }).then(canvas => {
+                        const finalCanvas = document.createElement('canvas');
+                        finalCanvas.width = 1080;
+                        finalCanvas.height = 1920; 
+                        const ctx = finalCanvas.getContext('2d');
+
+                        // Pinta todo o rectângulo de 1080x1920 com a cor de fundo (para compensar se o conteúdo for mais curto)
+                        ctx.fillStyle = emailBody.style.backgroundColor || '#ffffff';
+                        ctx.fillRect(0, 0, 1080, 1920);
+
+                        // Mantém a proporção exata da largura sem espalmar a imagem
+                        const scale = 1080 / canvas.width;
+                        const drawHeight = canvas.height * scale;
+
+                        // Se o conteúdo ultrapassar 1920 em altura, o excedente é cortado pela base
+                        ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, 1080, drawHeight);
+
+                        const base64Data = finalCanvas.toDataURL('image/jpeg', 0.95).split(',')[1];
+                        zip.file(`pagina_${index + 1}.jpg`, base64Data, {base64: true});
+                        
+                        capturePage(index + 1);
+                    }).catch(err => {
+                        console.error("Erro na página " + index, err);
+                        capturePage(index + 1); 
+                    });
                 };
 
-                html2pdf().set(opt).from(rootWrapper).save().then(() => {
-                    document.body.removeChild(rootWrapper);
-                    showToast("PDF gerado e baixado com sucesso!");
-                }).catch(err => {
-                    document.body.removeChild(rootWrapper);
-                    showToast("Erro ao gerar PDF.");
-                    console.error(err);
-                });
-            }, 800); // Aumentei o tempo para 800ms para garantir que imagens foram pintadas na tela invisível
+                capturePage(0);
+            }, 800);
         }
 
         // IMPORTAR HTML (Lê o arquivo exportado)
